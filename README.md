@@ -1,9 +1,3 @@
-Haan, samajh gaya 😄 Tumhe **plain Markdown code block** chahiye jisme GitHub ka formatting bilkul same rahe aur **top-right mein Copy button** aaye.
-
-Jo tumne screenshot bheja hai usme problem ye hai ki code block ke andar `id="..."` type extra formatting aa gaya tha. **Uski zarurat nahi hai.**
-
-Neeche wala block direct copy karo — **kisi text ko manually select karne ki zarurat nahi**, code block ke top-right **📋 Copy** icon dabana hai.
-
 ````markdown
 # 🍎 Apple Support AI Agent
 

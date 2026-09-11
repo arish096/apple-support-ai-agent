@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/twcs.csv
+*.log
+.DS_Store

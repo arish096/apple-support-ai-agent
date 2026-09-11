@@ -1,676 +1,632 @@
 # Apple Support AI Agent
 
-## Hiver SDE Intern — Take-Home Assignment
+An AI-powered customer support agent built for the Hiver SDE Intern Take-Home Assignment.
 
-An AI customer-support agent built from historical AppleSupport conversations from the Twitter Customer Support dataset.
+The system analyzes incoming Apple Support customer messages, predicts the primary support intent, retrieves similar historical Apple Support interactions, drafts a grounded response, and decides whether the request is safe to **AUTO-HANDLE** or should be **ESCALATED** to a human.
 
-The system performs three core tasks:
-
-1. Classifies the customer's issue into a small intent taxonomy.
-2. Retrieves similar historical AppleSupport conversations and uses their resolutions as evidence.
-3. Decides whether the case can be automatically handled or should be escalated to a human.
-
-The design intentionally prioritizes safe escalation over maximizing automation.
+> **Core principle:** When historical evidence is weak, ambiguous, or insufficiently similar, the agent prefers escalation over unsupported automation.
 
 ---
 
-## 1. Problem Framing
+## Features
 
-The goal is to build a support agent for one brand using real historical customer-support conversations.
-
-For each incoming customer message, the agent should:
-
-- identify the primary support intent,
-- find similar historical customer cases,
-- ground the proposed response in historical AppleSupport resolutions,
-- decide whether the case is safe to auto-handle,
-- otherwise escalate it to a human with a reason.
-
-The central design principle is:
-
-> High retrieval similarity is not sufficient evidence for automatic handling.
-
-A message can be similar to historical conversations while still lacking enough actionable evidence for a safe automated response.
+- Intent classification for Apple Support queries
+- Historical customer-support case retrieval
+- Evidence-based response drafting
+- Similarity-based confidence scoring
+- Safety-first AUTO-HANDLE vs ESCALATE decision
+- Explicit escalation reasons
+- Leakage-aware golden-set evaluation
+- LLM-as-judge evaluation harness
+- Interactive Streamlit demo
+- CLI-based inference and evaluation
 
 ---
 
-## 2. Dataset
-
-The project uses the Twitter Customer Support dataset.
-
-I selected AppleSupport as the target brand.
-
-The original dataset contains conversations between customers and support accounts. I constructed customer-to-AppleSupport response pairs by identifying AppleSupport replies and pairing them with the preceding customer message.
-
-This produced:
-
-- 106,646 AppleSupport customer → support-reply pairs
-- 104,823 unique customer messages
-- 1,823 repeated customer messages
-- 0 duplicate customer+reply pairs
-
-For development and modeling, a 10,000-example sample was used rather than repeatedly processing the complete dataset.
-
-This keeps the pipeline lightweight and reproducible while retaining a substantial amount of historical support data.
-
----
-
-## 3. Intent Taxonomy
-
-I defined a compact 12-class intent taxonomy based on recurring AppleSupport issues in the data.
-
-| Intent | Description |
-|---|---|
-| `battery_power_issue` | Battery drain, charging and power-related problems |
-| `ios_update_issue` | iOS updates, update failures and update-related problems |
-| `app_issue` | Application crashes, freezes or application-specific problems |
-| `device_hardware_issue` | Physical/device-level hardware problems |
-| `apple_id_account_issue` | Apple ID, login, password and account problems |
-| `calls_network_issue` | Calls, cellular service, network and signal problems |
-| `icloud_issue` | iCloud-related problems |
-| `keyboard_autocorrect_issue` | Keyboard, typing and autocorrect problems |
-| `apple_music_media_issue` | Apple Music and media-related problems |
-| `purchase_billing_issue` | Purchases, charges and billing problems |
-| `accessibility_feature_issue` | Accessibility features and related problems |
-| `other_support` | Cases that do not clearly fit another intent |
-
-When multiple issues appear in one message, the primary issue is selected.
-
----
-
-## 4. System Architecture
+## Architecture
 
 ```text
 Customer Message
        |
        v
-Intent Classifier
+Intent Classification
        |
        v
-TF-IDF Historical Retrieval
-       |
-       v
-Top Historical Support Cases
+Historical Case Retrieval
        |
        v
 Evidence Filtering
        |
-       +----------------------------+
-       |                            |
-       v                            v
-Specific + useful evidence       Weak/vague evidence
-       |                            |
-       v                            v
-Similarity >= threshold          ESCALATE
+       v
+Grounded Reply Draft
        |
        v
+Safety Decision
+   +---+---+
+   |       |
+   v       v
+AUTO-   ESCALATE
+HANDLE  TO HUMAN
+
+The system does not automatically respond simply because a similar historical message exists.
+
+A historical case must provide sufficiently relevant evidence before the agent considers automatic handling.
+
+Problem
+
+Customer-support conversations contain recurring issues, but not every incoming message should be automatically handled.
+
+The agent is designed to:
+
+Classify an incoming customer message into a small set of support intents.
+Retrieve historically similar customer-support cases.
+Use relevant historical responses as evidence for drafting a reply.
+Decide whether the request can be safely handled automatically.
+Escalate uncertain cases to a human with an explicit reason.
+
+The project prioritizes evidence quality and safe escalation over maximum automation rate.
+
+Dataset
+
+The project uses the Twitter Customer Support Conversations dataset.
+
+For this Apple Support agent, conversations involving the AppleSupport account were extracted and paired as:
+
+Customer Message -> Apple Support Reply
+
+The resulting Apple-specific interaction dataset contains:
+
+106,646 customer -> Apple Support pairs
+
+The original full dataset is intentionally excluded from the repository because it is large and is not required for inference.
+
+Intent Taxonomy
+
+The system uses 12 support intents:
+
+Intent	Description
+battery_power_issue	Battery drain, charging and power-related problems
+ios_update_issue	iOS updates and update-related problems
+app_issue	Application crashes, freezing and app-specific problems
+device_hardware_issue	Hardware, display, camera and physical-device problems
+apple_id_account_issue	Apple ID, login, verification and account access
+calls_network_issue	Calls, cellular service, signal and network problems
+icloud_issue	iCloud storage, syncing and related problems
+keyboard_autocorrect_issue	Keyboard, typing and autocorrect problems
+apple_music_media_issue	Apple Music and media-related problems
+purchase_billing_issue	Purchases, billing, charges and subscriptions
+accessibility_feature_issue	Accessibility features and related functionality
+other_support	Issues that do not fit the defined categories
+
+When multiple issues appear in a message, the system attempts to identify the primary support issue.
+
+Technical Approach
+1. Intent Classification
+
+The current intent classifier uses:
+
+TF-IDF features
+Unigrams + bigrams
+Logistic Regression
+Balanced class weights
+
+The classifier was trained using high-confidence keyword-based pseudo-labels generated from the development sample.
+
+This is treated as a development baseline rather than a fully human-supervised production classifier.
+
+2. Historical Reply Retrieval
+
+The agent maintains a searchable index of historical Apple Support interactions.
+
+Retrieval uses:
+
+TF-IDF vectorization
+Cosine similarity
+Historical customer messages
+Corresponding Apple Support replies
+
+For each incoming message, the system retrieves the most similar historical customer-support cases.
+
+3. Evidence Selection
+
+Not every retrieved case is accepted as evidence.
+
+The system prefers historical cases that satisfy:
+
+Matching predicted intent
+Sufficient similarity
+Non-generic historical reply
+Actionable troubleshooting guidance
+
+Generic replies such as:
+
+DM us and we can help.
+
+are not considered strong evidence for automated handling.
+
+4. Safety Decision
+
+The agent makes a conservative decision.
+
 AUTO-HANDLE
-       |
-       v
-Historical Support Reply
 
-The system has two main components.
+A request can be automatically handled when:
 
-Intent classification
+The customer message is sufficiently specific.
+A matching historical case exists.
+The similarity is above the safety threshold.
+The historical response contains actionable guidance.
+ESCALATE
 
-A TF-IDF representation with word n-grams is used with Logistic Regression.
+The request is escalated when:
 
-Historical retrieval
+The message is too vague.
+No sufficiently similar historical case is available.
+Historical evidence is below the similarity threshold.
+Useful actionable evidence cannot be established.
 
-Customer messages from historical AppleSupport conversations are indexed using TF-IDF vectors.
+This prevents the system from confidently generating unsupported support responses.
 
-The incoming message is compared against historical customer messages using cosine similarity.
-
-5. Evidence Selection
-
-The agent retrieves the top historical cases and applies additional filtering.
-
-A historical case is considered usable evidence when:
-
-Its historical intent matches the predicted intent.
-The historical response is not overly generic.
-The response contains actionable guidance.
-
-Examples of actionable guidance include:
-
-Settings
-restarting
-updating
-checking
-resetting
-installing/removing
-backup
-troubleshooting steps
-
-This prevents the system from treating a generic response such as "DM us and we'll help" as sufficient evidence for automation.
-
-6. Auto-Handle vs Escalation
-
-The agent uses a conservative decision policy.
-
-ESCALATE when:
-the customer message is too vague,
-no sufficiently useful historical evidence is found,
-historical evidence exists but similarity is below the safety threshold.
-AUTO-HANDLE when:
-the message is sufficiently specific,
-matching historical evidence exists,
-the historical response contains actionable guidance,
-similarity is at or above the safety threshold.
-
-The current similarity threshold is:
-
-0.30
-
-The threshold is only checked after evidence-quality filtering.
-
-Therefore, similarity alone does not trigger automatic handling.
-
-7. Example
-
-Input:
-
-My iPhone battery is draining very quickly after the latest iOS update.
-
-The agent returns:
-
-Predicted intent:
+Example
+Customer Message
+My iPhone battery is draining very quickly.
+Agent Output
+Intent:
 battery_power_issue
 
 Decision:
-ESCALATE
+AUTO-HANDLE
 
-Similarity:
-0.475
+Reason:
+Specific customer message + sufficiently similar historical
+case with matching intent and actionable guidance.
 
-The case is escalated because a sufficiently similar historical case with matching intent and actionable guidance was not selected.
+Historical Evidence:
+A similar Apple Support interaction was retrieved.
 
-This demonstrates an important property of the system:
+Draft Reply:
+Generated using the retrieved historical support guidance.
+Evaluation
 
-A similarity score above the threshold does not automatically mean that the case is safe to handle.
+A manually reviewed golden set was created and subsequently audited and cleaned.
 
-8. Golden Evaluation Set
-
-A manually reviewed evaluation set was created from AppleSupport examples.
-
-The final cleaned benchmark contains:
+Current evaluation set:
 
 199 examples
 
-The benchmark was manually audited and subsequently cleaned for obvious inconsistencies and duplicate examples.
+The exact evaluation message is excluded from its own retrieval results to reduce direct retrieval leakage.
 
-The final benchmark is not treated as a perfectly independent gold standard. Some cleaning involved rule-based corrections after manual auditing.
+Final Agent Results
+Metric	Result
+Golden examples	199
+Intent accuracy	19.10%
+Historical intent agreement	73.37%
+AUTO-HANDLE	44
+ESCALATE	155
+AUTO-HANDLE rate	22.11%
+Escalation rate	77.89%
+Average selected similarity	0.367
+Decision Distribution
+ESCALATE       155  (77.89%)
+AUTO-HANDLE     44  (22.11%)
+Escalation Reasons
+81  No sufficiently similar historical case with
+    matching intent and actionable guidance
 
-This limitation is explicitly considered when interpreting the results.
+51  Usable historical evidence exists, but similarity
+    is below the safety threshold
 
-9. Evaluation
+23  Customer message is too vague to safely determine
+    the issue
+Baseline Comparison
 
-The evaluation measures:
-
-Intent classification
-Accuracy
-Macro F1
-Weighted F1
-Agent behavior
-Auto-handle rate
-Escalation rate
-Retrieval similarity
-Historical intent agreement
-Qualitative evaluation
-Failure-mode analysis
-Historical evidence inspection
-LLM-as-judge evaluation
-
-The golden-set evaluation excludes exact self-matches during retrieval to reduce evaluation leakage.
-
-10. Baseline Comparison
-
-The current benchmark results are:
+The intent classifier was compared with simple baselines on the cleaned 199-example benchmark.
 
 Approach	Accuracy	Macro F1
-Majority-class baseline	45.0%	0.062
+Majority baseline	45.0%	0.062
 Keyword baseline	40.0%	0.227
 TF-IDF + Logistic Regression	37.5%	0.090
 
-The majority baseline predicts the most common class for every example.
+The current classifier does not outperform the simple baselines on this benchmark.
 
-The keyword baseline uses simple intent-specific keyword rules.
+This result is intentionally reported rather than hidden.
 
-The learned TF-IDF classifier does not currently outperform these simple baselines.
+The purpose of the evaluation is to understand model behavior, failure modes and safety—not to optimize a single headline metric.
 
-This is an important negative result rather than something hidden from the evaluation.
+What Is Misleading About My Headline Number?
 
-11. Agent Results
+The 19.10% intent accuracy should not be interpreted as a clean estimate of real-world intent understanding.
 
-On the cleaned 199-example benchmark, the current agent produced:
+Important limitations include:
 
-Intent accuracy:
-19.1%
-
-Historical intent agreement:
-73.4%
-
-Auto-handle:
-44 / 199
-22.1%
-
-Escalate:
-155 / 199
-77.9%
-
-Average selected similarity:
-0.367
-
-The agent is deliberately conservative.
-
-The relatively high escalation rate reflects the requirement that historical evidence must be both relevant and actionable before an automatic response is allowed.
-
-12. What Is Misleading About My Headline Number?
-
-The 19.1% intent accuracy should not be interpreted as a clean estimate of real-world intent understanding.
-
-There are several limitations:
-
-The evaluation set contains only 199 examples.
+The benchmark contains only 199 examples.
 The classes are highly imbalanced.
-Some examples are ambiguous and can reasonably belong to more than one category.
-The benchmark was manually audited and then rule-cleaned rather than being an independently labelled gold set.
-The intent classifier was trained using weak keyword-based labels rather than a large independently hand-labelled training set.
-The current learned classifier does not beat the simple baselines.
+Some examples remain ambiguous even after auditing and cleaning.
+The classifier was trained using weak keyword-based labels rather than a large independently hand-labelled training set.
+Intent classification is only one component of the overall agent.
+The agent separately evaluates historical evidence and can escalate uncertain cases.
 
-Therefore, the 19.1% number is most useful as a diagnostic signal and for comparing iterations, rather than as a definitive measure of production-level intent understanding.
+Therefore, the 19.10% accuracy is best treated as a diagnostic benchmark, not as a standalone production-quality metric.
 
-The agent's safety behavior should be evaluated separately from intent accuracy.
+The more operationally important question is:
 
-13. Top 5 Failure Modes
-Failure Mode 1 — Battery vs iOS Update Confusion
+Does the agent have sufficiently strong historical evidence to safely handle the request?
 
-Messages frequently mention both battery behavior and an iOS update.
+Failure Analysis
+1. Battery vs iOS Update Confusion
+
+Some messages mention an iOS update together with battery, heat or device symptoms.
 
 Example:
 
-since I installed the new IOS my phone is crashing everyday,
+Since I installed the new IOS my phone is crashing everyday,
 stopped working and start getting hot.
 
-The classifier can over-weight the update vocabulary and predict ios_update_issue even when the benchmark label emphasizes another issue.
+The classifier can over-weight update-related vocabulary.
 
 Hypothesis
 
-The current TF-IDF model is sensitive to high-frequency issue words but does not understand which problem is primary.
+The classifier needs better contextual representations and improved multi-issue handling.
 
-Improvement
+2. App / Hardware / Billing Boundary Confusion
 
-Use better multi-intent handling and train on independently labelled examples.
+Short messages can be difficult to distinguish between:
 
-Failure Mode 2 — App / Hardware / Billing Boundary Confusion
-
-Some customer messages contain device failures, application problems and purchase-related language together.
-
-Example:
-
-My iPhone X is already broken after like three weeks.
-It just turned off and never turned back on.
-
-The classifier can incorrectly associate such messages with purchase or billing language because of vocabulary overlap in the training data.
-
+application failure
+hardware failure
+billing or purchase context
 Hypothesis
 
-Weak labels and sparse examples for some classes create unstable class boundaries.
+A hierarchical taxonomy and clearer annotation guidelines could reduce these boundary errors.
 
-Improvement
+3. Keyboard / Autocorrect / iOS Overlap
 
-Create a larger, balanced, human-labelled training set.
+Keyboard issues frequently occur after system updates.
 
-Failure Mode 3 — Keyboard / Autocorrect Overlap With App and iOS Issues
+This creates overlap between:
 
-Keyboard problems frequently mention updates, applications or unusual characters.
+keyboard_autocorrect_issue
 
-Example:
+and:
 
-why does the letter after h show up like this...
-
-These short messages can be difficult to distinguish from broader iOS or application issues.
-
+ios_update_issue
 Hypothesis
 
-TF-IDF captures word overlap but not the underlying semantic relationship between typing, autocorrect and system updates.
+The classifier should prioritize the concrete customer symptom over the temporal context.
 
-Improvement
-
-Use sentence embeddings or a stronger text classifier and include more keyboard-specific labelled examples.
-
-Failure Mode 4 — Short or Context-Dependent Messages
+4. Short and Context-Dependent Messages
 
 Messages such as:
 
 Can you please help
 
-contain almost no information about the actual problem.
+contain insufficient information to identify the underlying issue.
 
-The system deliberately escalates these cases.
-
-This is a desirable safety behavior even if the retriever finds a high-similarity historical example.
+The system therefore escalates instead of guessing.
 
 Hypothesis
 
-A similarity model can find lexical similarity without knowing whether enough information exists to resolve the current issue.
+A clarification-question strategy could improve handling of these messages.
 
-Improvement
+5. Retrieval Similarity Does Not Guarantee Resolution Relevance
 
-Keep the specificity gate and consider asking a clarifying question before escalating.
+High cosine similarity does not necessarily mean that a historical response is appropriate for the new customer.
 
-Failure Mode 5 — Retrieval Similarity Does Not Equal Resolution Relevance
+Therefore, retrieval is combined with:
 
-A high similarity score does not guarantee that the historical reply provides a safe resolution.
-
-The agent therefore filters retrieved responses for:
-
-matching intent,
-non-generic content,
-actionable guidance.
+Intent compatibility
+Actionable guidance checks
+Generic-response filtering
+Similarity threshold
+Message-specificity checks
 Hypothesis
 
-Customer-message similarity and solution similarity are different concepts.
+Sentence embeddings and a stronger reranker could improve evidence quality.
 
-Improvement
+Safety Design
 
-Use a dedicated cross-encoder or reranker trained to measure customer-problem-to-resolution relevance.
+The agent intentionally favors precision over automation volume.
 
-14. Safety Design
+The decision process is:
 
-The most important safety property is that the system should not maximize automation at the expense of response quality.
-
-For example:
-
-High similarity
-        +
-Weak/generic historical reply
-        =
-ESCALATE
-
-rather than:
-
-High similarity
-        =
+Specific Message
+      +
+Matching Intent
+      +
+Relevant Historical Case
+      +
+Actionable Guidance
+      +
+Similarity Above Threshold
+      |
+      v
 AUTO-HANDLE
 
-The system also escalates vague requests.
+Otherwise:
 
-This makes the system more conservative and easier to audit.
+ESCALATE
+    |
+    v
+Human Support
 
-15. LLM-as-Judge
+This makes uncertainty explicit rather than hiding it behind a confident-looking generated response.
 
-An LLM-as-judge evaluation harness was implemented using OpenRouter.
+LLM-as-Judge
 
-The judge evaluates:
+The project includes an LLM-as-judge evaluation harness:
 
-whether the AUTO-HANDLE / ESCALATE decision was appropriate,
-reply quality on a 1–5 scale,
-whether the reply is grounded in historical evidence,
-whether the response is safe to auto-handle,
-a short explanation for the judgment.
+llm_judge.py
 
-The evaluation is designed to complement, rather than replace, deterministic metrics.
+The evaluation is designed to assess:
 
-The free-model daily request limit of the external judge API was reached during development, so the full judge run was not completed in the current development run.
+Decision correctness
+Reply quality
+Evidence grounding
+Safety of automation
 
-Therefore, no incomplete LLM-judge result is presented as a headline metric.
+The harness supports structured JSON responses, retries and resumable execution.
 
-16. Human Agreement
+During development, the available free-tier model API was rate-limited before the full 199-example judge run could be completed.
 
-LLM-as-judge scores should not be treated as ground truth.
+Therefore, an unsupported full-dataset LLM-judge score is not reported.
 
-A small human-reviewed subset should be used to measure judge-human agreement.
+This limitation is intentionally disclosed.
 
-The intended process is:
+Human Evaluation
 
-Agent output
-     |
-     +----> LLM Judge
-     |
-     +----> Human Reviewer
-                |
-                v
-        Compare judgments
+A stronger evaluation setup would independently review a subset of agent decisions for:
 
-Agreement should be reported for:
+AUTO-HANDLE / ESCALATE correctness
+Reply quality
+Evidence relevance
+Safety
 
-decision correctness,
-groundedness,
-safe-to-auto-handle.
+Human judgments can then be compared with LLM-judge decisions using:
 
-This provides evidence for whether the automated judge is a reasonable proxy for human evaluation.
+Accuracy
+Cohen's Kappa
+Per-dimension agreement
+Streamlit Demo
 
-17. What I Would Do With One More Week
-Day 1–2: Better labelled training data
+The project includes an interactive Streamlit application.
 
-Create a larger independently hand-labelled dataset with balanced coverage across all 12 intents.
+Run:
 
-This would reduce the dependence on weak keyword labels.
+streamlit run app.py
 
-Day 3: Better classifier
+The interface displays:
 
-Compare:
+Customer message
+Predicted intent
+AUTO-HANDLE / ESCALATE decision
+Decision reason
+Similarity score
+Draft reply
+Selected historical evidence
+Top retrieved historical cases
+CLI Usage
 
-TF-IDF + Logistic Regression
-TF-IDF + Linear SVM
-sentence embeddings
-lightweight transformer classifier
+Run:
 
-using the same fixed evaluation set.
+python agent.py
 
-Day 4: Better retrieval/reranking
+The CLI provides:
 
-Move from pure TF-IDF similarity toward semantic retrieval and add a reranking stage that evaluates whether the historical resolution actually addresses the new problem.
+1 - Test one customer message
+2 - Evaluate golden set
+Test a Customer Message
 
-Day 5: Better response generation
+Select:
 
-Instead of copying a historical response directly, generate a response constrained by retrieved evidence.
+1
 
-The generator should not introduce unsupported troubleshooting steps.
+Then enter a support query.
 
-Day 6: Evaluation
+The agent returns:
 
-Expand the golden set and run:
+Predicted intent
+Action
+Decision reason
+Similarity score
+Draft reply
+Historical evidence
+Retrieved cases
+Evaluate the Golden Set
 
-intent accuracy
-macro F1
-retrieval quality
-auto-handle precision
-escalation quality
-human-vs-LLM judge agreement
-Day 7: Error-driven iteration
+Select:
 
-Focus model improvements on the highest-frequency confusion pairs instead of optimizing aggregate accuracy alone.
+2
 
-18. Decision Log
-Decision 1 — Select AppleSupport as the target brand
+The evaluation runs on the 199-example golden set and writes results to:
 
-AppleSupport provided a large number of customer-support interactions, making it practical to build a retrieval-based prototype.
+data/golden_predictions.csv
+Installation
 
-Decision 2 — Pair each AppleSupport reply with the preceding customer message
+Python 3.10+ recommended.
 
-This provides a simple customer → support resolution structure suitable for retrieval.
+Install dependencies:
 
-Decision 3 — Use a compact 12-intent taxonomy
+pip install pandas numpy scikit-learn joblib streamlit requests
 
-A small taxonomy makes the system easier to evaluate and reduces extremely sparse categories.
+Then run:
 
-Decision 4 — Use the primary issue when multiple issues appear
+python agent.py
 
-This creates a single-label classification problem while acknowledging that real support messages can be multi-intent.
+or:
 
-Decision 5 — Use TF-IDF for the first retrieval system
-
-TF-IDF is lightweight, interpretable and fast enough for the take-home prototype.
-
-Decision 6 — Use cosine similarity
-
-Cosine similarity provides a simple normalized measure of lexical overlap between customer messages.
-
-Decision 7 — Exclude exact self-matches during golden evaluation
-
-This prevents the evaluation query from retrieving its own historical example.
-
-Decision 8 — Filter generic historical replies
-
-Responses such as "DM us" are not considered sufficient resolution evidence.
-
-Decision 9 — Require actionable guidance
-
-A historical reply must contain useful troubleshooting or next-step guidance before it can support automatic handling.
-
-Decision 10 — Add a message-specificity gate
-
-Very short or vague customer requests are escalated instead of being automatically answered.
-
-Decision 11 — Use conservative automation
-
-The system only auto-handles cases when evidence passes multiple checks.
-
-Decision 12 — Report negative model results honestly
-
-The learned classifier currently does not beat the simple baselines, so this result is reported rather than hidden.
-
-Decision 13 — Separate intent accuracy from agent safety
-
-A classifier can make an incorrect intent prediction while the agent still safely escalates the case.
-
-Decision 14 — Treat LLM-as-judge as a secondary evaluation
-
-LLM judgments are useful for qualitative evaluation but should not replace deterministic metrics or human review.
-
-19. Project Structure
+streamlit run app.py
+Project Structure
 hiver-ai-support-agent/
 │
 ├── agent.py
 ├── app.py
-├── analyze_data.py
-├── build_conversations.py
-├── check_brand.py
-├── clean_golden.py
-├── create_review_set.py
-├── create_targeted_candidates.py
-├── discover_intents.py
-├── evaluate_model.py
-├── find_brands.py
-├── label_data.py
 ├── llm_judge.py
-├── prepare_training_data.py
-├── review_candidates.py
+├── README.md
+├── .gitignore
 │
 ├── data/
 │   ├── apple_support_conversations.csv
-│   ├── golden_audited.csv
 │   ├── golden_cleaned.csv
 │   ├── golden_predictions.csv
-│   ├── golden_review_candidates.csv
-│   ├── golden_set.csv
-│   ├── labeled_sample.csv
-│   ├── sample.csv
-│   ├── targeted_candidates.csv
 │   ├── training_data.csv
-│   └── twcs.csv
+│   └── ...
 │
-└── models/
-    ├── cross_validate.py
-    ├── intent_classifier.joblib
-    ├── reply_retriever.joblib
-    ├── similarity_classifier.joblib
-    ├── similarity_model.py
-    ├── train_model.py
-    └── validate_similarity.py
-20. Installation
+├── models/
+│   ├── intent_classifier.joblib
+│   ├── reply_retriever.joblib
+│   ├── similarity_classifier.joblib
+│   ├── similarity_model.py
+│   ├── train_model.py
+│   ├── cross_validate.py
+│   └── validate_similarity.py
+│
+└── ...
 
-From the project directory:
+The original full twcs.csv dataset is excluded from GitHub because of its size.
 
-pip install pandas numpy scikit-learn joblib streamlit
-21. Running the Agent
-Interactive command-line mode
+Reproducibility
+
+The repository contains the trained model artifacts and prepared Apple Support interaction data required to run inference without downloading the original full dataset.
+
+Basic setup:
+
+pip install pandas numpy scikit-learn joblib streamlit requests
+
+Run the CLI:
+
 python agent.py
 
-Select:
-
-1 - Test one customer message
-
-Then enter a customer-support message.
-
-22. Running the Web UI
-
-Start Streamlit:
+Run the Streamlit application:
 
 streamlit run app.py
 
-The UI provides:
+Run the golden evaluation:
 
-customer message input,
-predicted intent,
-AUTO-HANDLE / ESCALATE decision,
-similarity score,
-decision reason,
-draft reply,
-selected historical evidence,
-top retrieved historical cases,
-explanation of the decision process.
-23. Running the Golden Evaluation
 python agent.py
 
-Select:
+Then select:
 
-2 - Evaluate golden set
+2
+One-Week Improvement Plan
 
-The evaluation results are saved to:
+If given another week, I would prioritize:
 
-data/golden_predictions.csv
-24. Reproducibility
+1. Larger Human-Labeled Dataset
 
-The headline pipeline is designed to run using the prepared sampled data and saved models rather than requiring the full raw dataset to be processed again.
+Create a larger independently labelled training set with clearer guidelines for overlapping intents.
 
-The main agent and evaluation pipeline use:
+2. Replace Weak Supervision
 
-Python
-pandas
-NumPy
-scikit-learn
-joblib
-Streamlit
+Train the classifier primarily on human-labelled examples instead of keyword-generated pseudo-labels.
 
-The external LLM judge is optional for running the core agent.
+3. Better Semantic Retrieval
 
-25. Limitations
+Replace TF-IDF retrieval with sentence embeddings and evaluate a stronger reranking model.
 
-The current prototype has several limitations:
+4. Clarification Questions
 
-The intent classifier is trained using weak keyword-based labels.
-The golden benchmark is relatively small.
-Class distribution is highly imbalanced.
-Some examples are inherently ambiguous.
-TF-IDF retrieval is lexical rather than deeply semantic.
-Historical responses can themselves be generic or incomplete.
-The current model does not outperform the simple baselines.
-The full LLM-as-judge evaluation was limited by the free external API request quota.
-Human-vs-LLM judge agreement still needs to be measured on a dedicated human-reviewed subset.
+Instead of immediately escalating vague requests, ask a targeted clarification question.
 
-These limitations are intentionally reported because the objective is to provide evidence about what works and what does not, rather than presenting an inflated headline metric.
+Example:
 
-26. Summary
+Could you tell me whether the issue is related to your
+battery, an app, or the iPhone itself?
+5. Stronger Safety Evaluation
 
-The current prototype demonstrates an end-to-end support-agent pipeline:
+Build a dedicated human-reviewed dataset for:
 
-Customer message
-      ↓
-Intent classification
-      ↓
-Historical case retrieval
-      ↓
-Evidence filtering
-      ↓
-Safety decision
-      ↓
-Draft response
+Unsafe AUTO-HANDLE decisions
+Irrelevant historical evidence
+Incorrect escalation
+Poorly grounded replies
+Decision Log
+1. Apple Support was selected as the brand
 
-The strongest design choice is the conservative escalation policy.
+It provided a sufficiently large set of historical customer-support interactions.
 
-Instead of assuming that a similar historical message is enough to answer automatically, the agent requires matching intent, useful historical resolution evidence and sufficient similarity.
+2. Customer -> brand reply pairs were used
 
-The current classifier still needs substantial improvement. In particular, the results show that weakly supervised intent classification is the main bottleneck, while historical retrieval and conservative escalation provide a useful foundation for a safer support workflow.
+This directly represents the support behavior the agent is expected to learn from.
+
+3. A small intent taxonomy was chosen
+
+A limited taxonomy makes classification and error analysis more interpretable.
+
+4. Primary issue classification was used
+
+A single customer message can contain multiple symptoms, so the system focuses on the primary support issue.
+
+5. TF-IDF was selected for the initial classifier
+
+It is lightweight, fast and interpretable.
+
+6. Keyword pseudo-labeling was used for development
+
+The manually labelled data was limited, so high-confidence keyword rules were used to expand the development training set.
+
+7. Retrieval was separated from classification
+
+Intent classification identifies the issue while retrieval provides historical evidence for the response.
+
+8. Generic historical responses were filtered
+
+Generic responses provide weak evidence for automated support.
+
+9. Actionable guidance was required
+
+Historical evidence should contain useful troubleshooting information.
+
+10. A similarity threshold was added
+
+Weak historical matches should not trigger automatic handling.
+
+11. Vague messages are escalated
+
+The system avoids guessing when the customer provides insufficient information.
+
+12. Self-retrieval leakage was reduced
+
+The exact evaluation message is excluded from its own retrieval results.
+
+13. Simple baselines were reported
+
+The classifier is evaluated against majority and keyword baselines.
+
+14. Limitations are explicitly documented
+
+Weak benchmark performance and incomplete free-tier LLM judging are reported transparently.
+
+Limitations
+
+This project is a research/prototype implementation rather than a production customer-support system.
+
+Current limitations include:
+
+Small manually reviewed evaluation set
+Strong class imbalance
+Ambiguous examples
+Weakly supervised classifier training
+TF-IDF-based semantic representation
+Incomplete full-dataset LLM-as-judge evaluation
+No completed human-vs-LLM agreement study
+Historical support responses may contain outdated guidance
+Historical similarity does not guarantee correctness for a new context
+Conclusion
+
+This project combines:
+
+Intent Classification + Historical Retrieval + Evidence Filtering + Grounded Response Drafting + Safety-First Escalation
+
+The key design decision is not to maximize automation.
+
+Instead, the agent asks:
+
+"Do I have enough relevant historical evidence to safely handle this request?"
+
+If the evidence is insufficient, the system escalates to a human.
+
+This makes the agent more transparent, auditable and conservative than a system that automatically responds to every similar-looking customer message.
+
+Author : Arish Islam
+
+Built as part of the Hiver SDE Intern Take-Home Assignment.

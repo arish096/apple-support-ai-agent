@@ -1,4 +1,4 @@
-# 🍎 Apple Support AI Agent
+# Apple Support AI Agent
 
 > AI-powered customer support agent built for the **Hiver SDE Intern Take-Home Assignment**.
 
